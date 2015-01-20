@@ -7,6 +7,7 @@ import curtsies.events
 
 from api import API, authorize
 import config
+import db
 
 logging.getLogger('curtsies').setLevel(logging.ERROR)
 
@@ -33,19 +34,18 @@ class Box:
 		self.fsarray[self.y1:self.y2, self.x1:self.x2] = fsa
 
 def main():
-	if not hasattr(config, 'ACCESS_TOKEN'):
-		authorize()
-		return
-
-	api = API(config.ACCESS_TOKEN)
+	credentials = authorize()
+	api = API(credentials['access_token'], credentials['refresh_token'])
+	labels = db.update_labels(api.get('labels')['labels'])
 
 	with Input(sigint_event=True) as keys, FullscreenWindow() as win:
 		fsa = FSArray(win.height, win.width)
 
-		labels = Box(fsa, 1, win.height-2, 1, 20)
-		for i in range(50):
-			labels.add_line('label %d' % i)
-		labels.render()
+		label_box = Box(fsa, 1, win.height-2, 1, 20)
+		for label_id, label in sorted(labels.items()):
+			if label['label_list_visibility']:
+				label_box.add_line(label['name'])
+		label_box.render()
 
 		messages = Box(fsa, 1, win.height-2, 22, win.width-1)
 		for i in range(50):
@@ -56,18 +56,16 @@ def main():
 		for k in keys:
 			if isinstance(k, curtsies.events.SigIntEvent) or k == 'q':
 				break
-			elif k == '<Ctrl-j>':
-				labels.add_line(k)
 			elif k == '<Ctrl-n>':
-				labels.scroll(1)
+				label_box.scroll(1)
 			elif k == '<Ctrl-p>':
-				labels.scroll(-1)
+				label_box.scroll(-1)
 			elif k == 'j':
 				messages.scroll(1)
 			elif k == 'k':
 				messages.scroll(-1)
 
-			labels.render()
+			label_box.render()
 			messages.render()
 			win.render_to_terminal(fsa)
 
