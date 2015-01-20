@@ -5,6 +5,9 @@ import logging
 from curtsies import FSArray, FullscreenWindow, Input
 import curtsies.events
 
+from api import API, authorize
+import config
+
 logging.getLogger('curtsies').setLevel(logging.ERROR)
 
 class Box:
@@ -30,6 +33,12 @@ class Box:
 		self.fsarray[self.y1:self.y2, self.x1:self.x2] = fsa
 
 def main():
+	if not hasattr(config, 'ACCESS_TOKEN'):
+		authorize()
+		return
+
+	api = API(config.ACCESS_TOKEN)
+
 	with Input(sigint_event=True) as keys, FullscreenWindow() as win:
 		fsa = FSArray(win.height, win.width)
 
