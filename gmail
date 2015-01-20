@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+
+import logging
+
+from curtsies import FSArray, FullscreenWindow, Input
+import curtsies.events
+
+logging.getLogger('curtsies').setLevel(logging.ERROR)
+
+class Box:
+	def __init__(self, fsa, y1, y2, x1, x2):
+		self.fsarray = fsa
+		self.y1, self.y2, self.x1, self.x2 = y1, y2, x1, x2
+		self.height = y2 - y1
+		self.width = x2 - x1
+		self.list = []
+		self.top = 0
+
+	def add_line(self, text):
+		self.list.append(text[:self.width])
+
+	def scroll(self, n):
+		max_top = max(len(self.list) - self.height, 0)
+		self.top = min(max(self.top + n, 0), max_top)
+
+	def render(self):
+		fsa = FSArray(self.height, self.width)
+		for i, line in enumerate(self.list[self.top : self.top+self.height]):
+			fsa[i, :] = [line]
+		self.fsarray[self.y1:self.y2, self.x1:self.x2] = fsa
+
+def main():
+	with Input(sigint_event=True) as keys, FullscreenWindow() as win:
+		fsa = FSArray(win.height, win.width)
+
+		labels = Box(fsa, 1, win.height-2, 1, 20)
+		for i in range(50):
+			labels.add_line('label %d' % i)
+		labels.render()
+
+		messages = Box(fsa, 1, win.height-2, 22, win.width-1)
+		for i in range(50):
+			messages.add_line('message %d' % i)
+		messages.render()
+
+		win.render_to_terminal(fsa)
+		for k in keys:
+			if isinstance(k, curtsies.events.SigIntEvent) or k == 'q':
+				break
+			elif k == '<Ctrl-j>':
+				labels.add_line(k)
+			elif k == '<Ctrl-n>':
+				labels.scroll(1)
+			elif k == '<Ctrl-p>':
+				labels.scroll(-1)
+			elif k == 'j':
+				messages.scroll(1)
+			elif k == 'k':
+				messages.scroll(-1)
+
+			labels.render()
+			messages.render()
+			win.render_to_terminal(fsa)
+
+main()
