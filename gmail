@@ -7,7 +7,6 @@ from curtsies import FSArray, FullscreenWindow, Input
 import curtsies.events
 
 from api import API, authorize
-import config
 import db
 
 logging.getLogger('curtsies').setLevel(logging.ERROR)
@@ -39,6 +38,11 @@ class Account:
 		self.api = api
 		self.labels = None
 		self.messages = None
+
+	def get_messages(self):
+		self.messages = self.parse_headers(db.get_messages())
+		if not self.messages:
+			self.update_messages()
 
 	def update_labels(self):
 		labels = self.api.get('labels')['labels']
@@ -89,7 +93,7 @@ class Account:
 				'body': body,
 				'labels': m['labelIds'],
 			}
-		self.messages = parsed_messages
+		self.messages = self.parse_headers(parsed_messages)
 		db.update_messages(parsed_messages)
 
 	def get_body(self, payload):
@@ -99,6 +103,17 @@ class Account:
 			body = self.get_body(part)
 			if body:
 				return body
+
+	def parse_headers(self, messages):
+		interested_headers = ['To', 'From', 'Subject']
+		for message in messages.values():
+			headers = message['headers'].split('\n')
+			for header in headers:
+				for ih in interested_headers:
+					if header.startswith(ih + ': '):
+						message[ih.lower()] = header[len(ih)+2:]
+						break
+		return messages
 
 def main():
 	credentials = authorize()
@@ -131,9 +146,9 @@ def main():
 			elif k == 'k':
 				mail_box.scroll(-1)
 			elif k == '<SPACE>':
-				account.update_messages()
-				for message in account.messages.items():
-					mail_box.add_line(message['headers'].split('\n', 1)[0])
+				account.get_messages()
+				for message in account.messages.values():
+					mail_box.add_line(message['from'].ljust(19) + ' ' + message['subject'])
 
 			label_box.render()
 			mail_box.render()

@@ -27,6 +27,7 @@ def update_labels(labels):
 			(gmail_id, name, message_list_visibility, label_list_visibility)
 			VALUES(?, ?, ?, ?)
 	''', args)
+	conn.commit()
 
 def update_messages(messages):
 	messages_args = []
@@ -36,9 +37,17 @@ def update_messages(messages):
 				message['headers'], message['body']))
 		for label_id in message['labels']:
 			message_labels_args.append((label_id, message_id))
-	conn.executemany('''
-		INSERT INTO messages (gmail_id, history_id, thread_id, headers, body) VALUES(?, ?, ?, ?, ?)
-	''', messages_args)
-	conn.executemany('''
-		INSERT INTO message_labels (label_id, message_id) VALUES(?, ?)
-	''', message_labels_args)
+	with conn:
+		conn.executemany('''
+			INSERT INTO messages (gmail_id, history_id, thread_id, headers, body) VALUES(?, ?, ?, ?, ?)
+		''', messages_args)
+		conn.executemany('''
+			INSERT INTO message_labels (label_id, message_id) VALUES(?, ?)
+		''', message_labels_args)
+
+def get_messages():
+	messages = {}
+	for row in conn.execute('SELECT gmail_id, history_id, thread_id, headers, body FROM messages'):
+		message = dict(row)
+		messages[row['gmail_id']] = message
+	return messages
