@@ -40,17 +40,25 @@ class API:
 		self.access_token = access_token
 		self.refresh_token = refresh_token
 
-	def get(self, endpoint):
-		url = 'https://www.googleapis.com/gmail/v1/users/me/' + endpoint
+	def get(self, *endpoint, **params):
+		url = 'https://www.googleapis.com/gmail/v1/users/me/' + '/'.join(endpoint)
 		headers = {'Authorization': 'Bearer ' + self.access_token}
-		response = rs.get(url, headers=headers)
+
+		camel_case_params = {}
+		for k, v in params.items():
+			split = k.split('_')
+			k = split[0] + ''.join(map(str.capitalize, split[1:]))
+			camel_case_params[k] = v
+
+		response = rs.get(url, headers=headers, params=camel_case_params)
 		data = response.json()
 		error = data.get('error')
 		if error:
 			if error['code'] != 401:
 				raise Exception(error)
 			self.refresh()
-			response = rs.get(url, headers=headers)
+			headers['Authorization'] = 'Bearer ' + self.access_token
+			response = rs.get(url, headers=headers, params=camel_case_params)
 			data = response.json()
 			error = data.get('error')
 			if error:

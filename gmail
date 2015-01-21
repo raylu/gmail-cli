@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import logging
 
 from curtsies import FSArray, FullscreenWindow, Input
@@ -33,24 +34,89 @@ class Box:
 			fsa[i, :] = [line]
 		self.fsarray[self.y1:self.y2, self.x1:self.x2] = fsa
 
+class Account:
+	def __init__(self, api):
+		self.api = api
+		self.labels = None
+		self.messages = None
+
+	def update_labels(self):
+		labels = self.api.get('labels')['labels']
+		parsed_labels = {}
+		for label in labels:
+			unread = label.get('threadsUnread') or label.get('messagesUnread', 0)
+
+			message_list_visibility = label.get('messageListVisibility', 'show')
+			if message_list_visibility == 'show':
+				message_list_visibility = 1
+			elif message_list_visibility == 'hide':
+				message_list_visibility = 0
+			else:
+				raise Exception(message_list_visibility)
+
+			label_list_visibility = label.get('labelListVisibility', 'labelShow')
+			if label_list_visibility == 'labelShow':
+				label_list_visibility = 1
+			elif label_list_visibility == 'labelShowIfUnread' and unread:
+				label_list_visibility = 1
+			elif label_list_visibility == 'labelHide':
+				label_list_visibility = 0
+
+			parsed_labels[label['id']] = {
+				'name': label['name'],
+				'message_list_visibility': message_list_visibility,
+				'label_list_visibility': label_list_visibility,
+				'unread': unread,
+			}
+		self.labels = parsed_labels
+		db.update_labels(parsed_labels)
+
+	def update_messages(self):
+		messages = self.api.get('messages', label_ids='INBOX')
+		parsed_messages = {}
+		for message in messages['messages']:
+			m = self.api.get('messages', message['id'])
+			headers = []
+			for header in m['payload']['headers']:
+				headers.append('%s: %s' % (header['name'], header['value']))
+			body = self.get_body(m['payload'])
+			if not body:
+				body = m['snippet']
+			parsed_messages[m['id']] = {
+				'history_id': m['historyId'],
+				'thread_id': m['threadId'],
+				'headers': '\n'.join(headers),
+				'body': body,
+				'labels': m['labelIds'],
+			}
+		self.messages = parsed_messages
+		db.update_messages(parsed_messages)
+
+	def get_body(self, payload):
+		if payload.get('mimeType') == 'text/plain':
+			return base64.urlsafe_b64decode(payload['body']['data'])
+		for part in payload.get('parts', []):
+			body = self.get_body(part)
+			if body:
+				return body
+
 def main():
 	credentials = authorize()
 	api = API(credentials['access_token'], credentials['refresh_token'])
-	labels = db.update_labels(api.get('labels')['labels'])
+	account = Account(api)
+	account.update_labels()
 
 	with Input(sigint_event=True) as keys, FullscreenWindow() as win:
 		fsa = FSArray(win.height, win.width)
 
 		label_box = Box(fsa, 1, win.height-2, 1, 20)
-		for label_id, label in sorted(labels.items()):
+		for label_id, label in account.labels.items():
 			if label['label_list_visibility']:
 				label_box.add_line(label['name'])
 		label_box.render()
 
-		messages = Box(fsa, 1, win.height-2, 22, win.width-1)
-		for i in range(50):
-			messages.add_line('message %d' % i)
-		messages.render()
+		mail_box = Box(fsa, 1, win.height-2, 22, win.width-1)
+		mail_box.render()
 
 		win.render_to_terminal(fsa)
 		for k in keys:
@@ -61,12 +127,16 @@ def main():
 			elif k == '<Ctrl-p>':
 				label_box.scroll(-1)
 			elif k == 'j':
-				messages.scroll(1)
+				mail_box.scroll(1)
 			elif k == 'k':
-				messages.scroll(-1)
+				mail_box.scroll(-1)
+			elif k == '<SPACE>':
+				account.update_messages()
+				for message in account.messages.items():
+					mail_box.add_line(message['headers'].split('\n', 1)[0])
 
 			label_box.render()
-			messages.render()
+			mail_box.render()
 			win.render_to_terminal(fsa)
 
 main()
